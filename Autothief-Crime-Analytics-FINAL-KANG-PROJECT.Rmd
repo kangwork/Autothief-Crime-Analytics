@@ -1,0 +1,418 @@
+---
+title: "Autothief Crime Analytics"
+author: "Jaden Zhang, Kyunghyun Kim, Youn Jee Kang, Alexander Dobbin, TUT 0201, 201-1"
+output:
+  ioslides_presentation: default
+  beamer_presentation: default
+  widescreen: yes
+---
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# echo=FALSE will stop the code chunk from appearing in the knit document
+# warning=FALSE and message=FALSE will stop R messages from appearing in the knit document
+library(tidyverse)
+library(knitr)
+```
+
+---
+
+### **Introduction**
+
+- In 2016, there were a total number of 3236 autothief related cases in the entire city of Toronto.  
+- Most automobiles are expensive, and chasing after thieves takes considerable time and resources for both the victims and the police.  
+- We would like to investigate in the data containing all the automobile stolen incidents happened in the past few years from the Toronto Police Service.  
+- We want to know if when and where the incidents are most likely to happen, and whether there is a clear trend or just due to a chance.
+
+---
+
+### **Objectives**
+
+- Are the auto thieves more likely to steal automobiles in a certain time interval in a day or are they equally likely to steal automobiles in anytime in a day?
+- Are the auto thieves more likely to steal automobiles in a particular season or are they equally likely to steal automobiles throughout the whole year?
+- Does the population density of an area have an impact on the rate of autothief related cases happened in that area? (in 2016)
+
+---
+
+### **Data Summary**
+
+- For objective 1, we separated a day into four equal sections: 0am to 6am, 6am to 12pm, 12pm to 6pm, and 6pm to 0am. We then found the proportions of crime for each time interval in the total crimes.
+- For objective 2, we separated a year into four seasons: spring, summer, fall, and winter. Similarly, we calculated the proportions of crime occurences for each season in the total crimes.
+- For objective 3, we derived the crime rate in an area by fitlering out the data in 2016 first, and then divided the number of crimes happened in a neighbourhood by its population.
+- The seed for all the simulations is 101.
+
+---
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+auto_thefts <- read.csv("auto_thefts.csv")
+set.seed(101) 
+auto_thefts <- auto_thefts %>%
+  select(occurrencehour) %>%
+  mutate(occurrencehour_4 = ifelse(occurrencehour >= 0 & occurrencehour < 6, "12am to 6am", ifelse(occurrencehour >= 6 & occurrencehour < 12, "6am to 12pm", ifelse(occurrencehour >= 12 & occurrencehour < 18, "12pm to 6pm", "6pm to 12am"))))
+
+AutoThefts_grpHour <- group_by(auto_thefts, occurrencehour_4)
+   kable(summarise(AutoThefts_grpHour,
+          "num of crime" = n(),"prop of crime"=n()/18178))
+
+auto_thefts <- read.csv("auto_thefts.csv")
+auto_thefts <- auto_thefts %>% filter(!is.na(occurrenceyear))
+set.seed(101) 
+auto_thefts <- auto_thefts %>%
+  select(occurrencedayofyear) %>%
+  mutate(season = ifelse(occurrencedayofyear >= 61 & occurrencedayofyear < 153, "Spring", ifelse(occurrencedayofyear >= 153 & occurrencedayofyear < 245, "Summer", ifelse(occurrencedayofyear >= 245 & occurrencedayofyear < 336, "Fall", "Winter"))))
+
+
+AutoThefts_season <- group_by(auto_thefts, season)
+kable(summarise(AutoThefts_season,
+          "num of crime" = n(),"prop of crime"=n()/18175))
+```
+
+---
+
+### **Statistic Method Used for Question 1 and 2**
+
+- We set the two hypothesis for each of the two questions. 
+- The null hypothesis, which is the thieves are equally likely to steal automobiles in anytime in a day, and any season in a year. (this means the probability is 0.25 for both questions' null hypothesis)
+- The alternative hypothsis, which is that thieves tend to steal automobiles more often in some time of a day and in some seasons than others.
+- We then simulated 1000 simulation under the above hypothesis for each section of the day and each season.
+- The p-value of each simulations were calculated.
+- The p-value is the probability of observing data that is at least as unusual (or at least as extreme) as the sample data, assuming that the null hypothesis is true.
+- With the p-value, we accept or reject the null hypothesis.
+
+---
+
+### **Statistic Method Used in Question 3**
+
+- Data were divided into two groups, test and training datasets.
+- A regression model were fitted to find whether there is an association between the crime rate in a neighbourhood and its population density or not.
+- Then we compraed RMSE values for the training and testing data to see if it is overfitting or not.
+
+---
+
+### **Results for Question 1**
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+n_observations <- 18178 # number of obeservations
+repetitions <- 1000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) 
+
+#12am_to_6am
+for (i in 1:repetitions){
+new_sim <- sample(c("12am_to_6am", "6am_to_12pm", "12pm_to_6pm", "6pm_to_12am"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_12_16am <- sum(new_sim == "12am_to_6am") / n_observations
+  simulated_stats[i] <- sim_p_12_16am; # add new value to vector of results
+}
+
+sim <- data_frame(p_12_6am = simulated_stats)
+ 
+
+sim %>% ggplot(aes(x = p_12_6am)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened on 12am to 6am if p=0.25") + ylab("number of simulations") + ggtitle("Proportion of Crime Happened in 12am to 6am Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_12_6am <= 0.1654197 | p_12_6am >= 0.25+0.25-0.1654197)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+#6am_to_12pm
+for (i in 1:repetitions){
+new_sim <- sample(c("12am_to_6am", "6am_to_12pm", "12pm_to_6pm", "6pm_to_12am"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_612pm <- sum(new_sim == "6am_to_12pm") / n_observations
+  simulated_stats[i] <- sim_p_612pm; # add new value to vector of results
+}
+
+sim <- data_frame(p_6_12pm = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_6_12pm)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened on 6am to 12pm if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in 6am to 12pm Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_6_12pm <= 0.2232919 | p_6_12pm >= 0.25+0.25-0.2232919)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+#12pm_to_6pm
+for (i in 1:repetitions){
+new_sim <- sample(c("12am_to_6am", "6am_to_12pm", "12pm_to_6pm", "6pm_to_12am"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_1216pm <- sum(new_sim == "12pm_to_6pm") / n_observations
+  simulated_stats[i] <- sim_p_1216pm; # add new value to vector of results
+}
+
+sim <- data_frame(p_12_6pm = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_12_6pm)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened on 12pm to 6pm if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in 12pm to 6pm Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_12_6pm <= 0.1533722 | p_12_6pm >= 0.25+0.25-0.1533722)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+#6pm_to_12am
+for (i in 1:repetitions){
+new_sim <- sample(c("12am_to_6am", "6am_to_12pm", "12pm_to_6pm", "6pm_to_12am"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_612am <- sum(new_sim == "6pm_to_12am") / n_observations
+  simulated_stats[i] <- sim_p_612am; # add new value to vector of results
+}
+
+sim <- data_frame(p_6_12am = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_6_12am)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened on 6pm to 12am if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in 6pm to 12am Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_6_12am <= 0.25+0.25-0.4579162 | p_6_12am >= 0.4579162)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+### **Result for Question 2**
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+n_observations <- 18175 # number of obeservations
+repetitions <- 1000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) 
+
+#Spring
+for (i in 1:repetitions){
+new_sim <- sample(c("Spring", "Sunmmer", "Fall", "Winter"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_spring <- sum(new_sim == "Spring") / n_observations
+  simulated_stats[i] <- sim_p_spring; # add new value to vector of results
+}
+
+sim <- data_frame(p_spring = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_spring)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened in Spring if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in Spring Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_spring <= 0.2369188 | p_spring >= 0.25+0.25-0.2369188)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+n_observations <- 18175 # number of obeservations
+repetitions <- 1000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) 
+
+#Summer
+for (i in 1:repetitions){
+new_sim <- sample(c("Spring", "Summer", "Fall", "Winter"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_summer <- sum(new_sim == "Summer") / n_observations
+  simulated_stats[i] <- sim_p_summer; # add new value to vector of results
+}
+
+sim <- data_frame(p_summer = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_summer)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened in Summer if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in Summer Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_summer >= 0.2660248 | p_summer <= 0.25+0.25-0.2660248)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+n_observations <- 18175 # number of obeservations
+repetitions <- 1000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) 
+
+#Fall
+for (i in 1:repetitions){
+new_sim <- sample(c("Spring", "Summer", "Fall", "Winter"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_fall <- sum(new_sim == "Fall") / n_observations
+  simulated_stats[i] <- sim_p_fall; # add new value to vector of results
+}
+
+sim <- data_frame(p_fall = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_fall)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened in Fall if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in Fall Base on the Null Hypothesis")
+
+pvalue <- sim %>%
+  filter(p_fall <= 0.5-0.2788996 | p_fall >= 0.2788996)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+n_observations <- 18175 # number of obeservations
+repetitions <- 1000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) 
+
+#Winter
+for (i in 1:repetitions){
+new_sim <- sample(c("Spring", "Summer", "Fall", "Winter"),
+                    size = n_observations,
+                    prob = c(0.25,0.25,0.25,0.25),
+                    replace = TRUE)
+  sim_p_winter <- sum(new_sim == "Winter") / n_observations
+  simulated_stats[i] <- sim_p_winter; # add new value to vector of results
+}
+
+sim <- data_frame(p_winter = simulated_stats)
+ 
+sim %>% ggplot(aes(x = p_winter)) +
+  geom_histogram(binswidth=0.01, colour = "black", fill = "grey") +
+  xlab("Simulated Proportion of crimes happened in Winter if p=0.25") + ylab("number of simulations")+ggtitle("Proportion of Crime Happened in Winter Base on the Null Hypothesis")
+ 
+pvalue <- sim %>%
+  filter(p_winter <= 0.2181568 | p_winter >= 0.5-0.2181568)%>%
+  summarise(p_value = n() / repetitions)
+kable(pvalue)
+```
+
+---
+
+### **Conclusion for Question 1 & 2**
+- P-values for all 8 of the simulations are 0.
+- It means that based on the null hypothesis, we will never get any simulation that is as or more extreme then the observed datas.
+- Since the p-values are so small, we have a strong evidance against the null hypothesis, thus we accept the alternative hypothesis.
+- Autothieves are more likely to steal an automobile in evening(6pm to 12am) and afternoon(12pm to 6pm).
+- Autothieves are more likely to steal an automobile in fall and summer.
+
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,fig.width=7,fig.height=3}
+library(tidyverse)
+library(knitr)
+library(rpart)
+Auto<-read.csv("auto_thefts.csv")
+hood<-read.csv("neighbourhood_profiles_2016.csv")
+Auto<-Auto%>%filter(reportedyear==2016)
+hood<-hood%>%select(pd_per_km2 = pop_density_per_square_km,Hood_ID,pop_2016)
+autohood<-full_join(x=hood,y=Auto,by="Hood_ID")
+
+crime_in_hood<-rep(NA,140)
+for (i in 1:140) {
+crime_in_hood[i]<-as.numeric(autohood%>%filter(Hood_ID == i)%>%summarise(n=n()))
+}
+
+
+Hood_ID2<-rep(NA,140)
+for (i in 1:140) {
+Hood_ID2[i]<-as.numeric(i)
+}
+
+
+crime_in_hood<-data_frame(num_of_crime = crime_in_hood,Hood_ID = Hood_ID2)
+
+auto2<-full_join(x=hood,y=crime_in_hood,by="Hood_ID")
+
+auto2<-auto2%>%mutate(prop = num_of_crime/pop_2016)
+
+ggplot(auto2, aes(x=pd_per_km2, y=prop)) + 
+  geom_point() + geom_smooth(method="lm", fill=NA) + theme_bw()+ggtitle(label = "Prediction of proportion of crime in a neighbourhood", subtitle = "based on population density")
+kable(summary(lm(prop ~ pd_per_km2, data=auto2))$coefficients)
+
+set.seed(101)
+n <- nrow(auto2)
+training_indices <- sample(1:n, size=round(0.8*n))
+train <- auto2[training_indices,]
+
+# Testing dataset includes all observations NOT in the training data
+test <- auto2[-training_indices,]
+
+mod1 <- lm(prop ~ pd_per_km2, data=train)
+
+
+# Make predictions for testing data
+pred1.test <- predict(mod1, newdata=test)
+
+# Make predictions for training data
+pred1.train <- predict(mod1, newdata=train)
+
+# Calculate RMSE for training and testing data
+rmse1.train <- sqrt(sum((pred1.train - train$pd_per_km2)^2 / nrow(train)))
+
+rmse1.test <- sqrt(sum((pred1.test - test$pd_per_km2)^2 / nrow(test)))
+
+kable(data_frame(rmse_test = rmse1.test,
+           rmse_train = rmse1.train,
+           ratio_of_rmses = rmse1.train / rmse1.test))
+```
+
+---
+
+### **Conclusion for Question 3**
+
+- Since we obtained small p-values again, we can reject the null hypothesis and conclude that the popullation density does have an effect on the crime rate related to automobile.
+- Less populated place tend to have a higher automobile crime rate compare to the more popullated place.
+- RMSE for the testing data and the training data is similar, which means it is not ober fitting.
+
+---
+
+### **General Conclusion**
+
+- Autotheives tend to steal cars on 12pm to 12am, espesially 6pm to 12am. Also they like to steal them in the summer and fall.
+- The rate of crime related to automobiles tend to be higher in the less popullated neighborhood, and lower in the neighborhood with high population density.
+- Some challanges: understanding the 0 p-values.
+
+---
+
+### **Strength and Limitations**
+
+Strength: 
+- For all three questions, we have extremely small p-value and a high RMSE ratio, thus we have a high confidence in our result.
+- From a large data set, it means that our answer will be more accurate.
+
+Limitation:
+- We do not really know the reasoning behind the conclusions for question 1 and 2.
+- For question 3, we cannot perdict the crime rate in neighborhoods with more than 25000 population density since we do not have enough data to make the prediction accurate.
+- The data used for question 3 is from 2016, which might not be as useful for 2020.
+
+---
+
+### **Suggestions for the Police**
+
+- Schedule more police officers in the afternoon and in the evening.
+- Recruit more interim polices or volunteers in the summer and fall, especially summer.
+- Set more police in the areas with less popullated areas.
